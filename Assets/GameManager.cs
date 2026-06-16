@@ -12,10 +12,12 @@ public class GameManager : MonoBehaviour
     public TextMeshProUGUI comboText;
     public TextMeshProUGUI movesText;
     public TextMeshProUGUI highScoreText;
+    public TextMeshProUGUI targetText;
     public bool isGameActive = false;
     public int moves = 20;
+    public LevelData[] levels;
 
-
+    private int currentLevel = 0;
     private Tile firstTile;
     private Tile secondTile;
 
@@ -106,6 +108,14 @@ public class GameManager : MonoBehaviour
         moves--;
         UpdateUI();
 
+
+        if (scoreManager.Score >= levels[currentLevel].targetScore)
+        {
+            LevelCompleted();
+            ResetSelection();
+            yield break;
+        }
+
         if (moves <= 0)
         {
             isGameActive = false;
@@ -117,8 +127,11 @@ public class GameManager : MonoBehaviour
 
     void ResetSelection()
     {
-        firstTile.ResetScale();
-        secondTile.ResetScale();
+        if (firstTile != null)
+            firstTile.ResetScale();
+
+        if (secondTile != null)
+            secondTile.ResetScale();
 
         firstTile = null;
         secondTile = null;
@@ -140,13 +153,7 @@ public class GameManager : MonoBehaviour
     }
     public void StartGame()
     {
-        scoreManager.ResetScore();
-        moves = 20;
-        isGameActive = true;
-
-        UpdateUI();
-
-        Debug.Log("Game Started");
+        StartLevel(0);
     }
     void UpdateUI()
     {
@@ -154,5 +161,46 @@ public class GameManager : MonoBehaviour
         comboText.text = "Combo: x" + scoreManager.Combo;
         movesText.text = "Moves: " + moves;
         highScoreText.text = "High Score: " + scoreManager.HighScore;
+        targetText.text = "Target: " + levels[currentLevel].targetScore;
     }
+    public void LevelCompleted()
+    {
+        isGameActive = false;
+
+        uiManager.ShowLevelCompleted();
+    }
+    public void StartLevel(int levelIndex)
+    {
+        currentLevel = levelIndex;
+
+        gridManager.ResetGrid();
+
+        moves = levels[levelIndex].moves;
+
+        scoreManager.ResetScore();
+
+        firstTile = null;
+        secondTile = null;
+
+        isGameActive = true;
+
+        UpdateUI();
+
+        Debug.Log("Запущено рівень " + (levelIndex + 1));
+    }
+    public void NextLevel()
+    {
+        currentLevel++;
+
+        if (currentLevel < levels.Length)
+        {
+            uiManager.ShowGame();
+            StartLevel(currentLevel);
+        }
+        else
+        {
+            uiManager.ShowMenu();
+        }
+    }
+
 }

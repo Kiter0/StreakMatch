@@ -27,7 +27,7 @@ public class GridManager : MonoBehaviour
         GenerateGrid();
     }
 
-    void GenerateGrid()
+    public void GenerateGrid()
     {
         for (int x = 0; x < width; x++)
         {
@@ -605,5 +605,19 @@ public class GridManager : MonoBehaviour
         }
 
         return horizontalCount >= 3 || verticalCount >= 3;
+    }
+    public void ClearGrid()
+    {
+        foreach (Transform child in tileFactory.tileParent)
+        {
+            DestroyImmediate(child.gameObject);
+        }
+
+        grid = new Tile[width, height];
+    }
+    public void ResetGrid()
+    {
+        ClearGrid();
+        GenerateGrid();
     }
 }

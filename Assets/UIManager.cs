@@ -11,6 +11,7 @@ public class UIManager : MonoBehaviour
     public GameObject settingsPanel;
     public GameObject gameField;
 
+    public TextMeshProUGUI resultText;
     public TextMeshProUGUI finalScoreText;
     public TextMeshProUGUI finalHighScoreText;
     public TextMeshProUGUI recordRow1Text;
@@ -35,6 +36,7 @@ public class UIManager : MonoBehaviour
     {
         HideAllPanels();
         mainMenu.SetActive(true);
+        GameManager.instance.gridManager.ClearGrid();
     }
 
     public void StartGame()
@@ -74,17 +76,41 @@ public class UIManager : MonoBehaviour
         gameOverPanel.SetActive(true);
         gameField.SetActive(true);
 
+        resultText.text = "Поразка";
         finalScoreText.text = "Рахунок: " + GameManager.instance.scoreManager.Score;
         finalHighScoreText.text = "Найкращий результат: " + GameManager.instance.scoreManager.HighScore;
     }
 
     public void RestartGame()
     {
-        StartGame();
+        GameManager.instance.StartLevel(0);
     }
 
     public void ExitGame()
     {
         Application.Quit();
+    }
+    public void ShowLevelCompleted()
+    {
+        HideAllPanels();
+
+        gameOverPanel.SetActive(true);
+        gameField.SetActive(true);
+
+        resultText.text = "Перемога";
+
+        finalScoreText.text =
+            "Рахунок: " + GameManager.instance.scoreManager.Score;
+
+        finalHighScoreText.text =
+            "Найкращий результат: " +
+            GameManager.instance.scoreManager.HighScore;
+    }
+    public void ShowGame()
+    {
+        HideAllPanels();
+
+        gamePanel.SetActive(true);
+        gameField.SetActive(true);
     }
 }
