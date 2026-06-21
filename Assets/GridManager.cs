@@ -1,4 +1,5 @@
 using UnityEngine;
+using System.Collections;
 
 public class GridManager : MonoBehaviour
 {
@@ -8,23 +9,17 @@ public class GridManager : MonoBehaviour
     public Tile[,] grid;
     public TileFactory tileFactory;
     public GameObject tilePrefab;
-    
-
+    public float hintDelay = 15f; // через сколько секунд показывать подсказку
+    private float idleTimer = 0f;
+    private bool hintShown = false;
+    private Tile hintTileA;
+    private Tile hintTileB;
     float offset = 1f;
-
-    Color[] colors = new Color[]
-    {
-        Color.red,
-        Color.blue,
-        Color.green,
-        Color.yellow,
-        Color.magenta
-    };
+    bool isProcessing = false;
 
     void Start()
     {
         grid = new Tile[width, height];
-        GenerateGrid();
     }
 
     public void GenerateGrid()
@@ -39,7 +34,6 @@ public class GridManager : MonoBehaviour
                 );
 
                 TileType randomType;
-
                 do
                 {
                     randomType = tileFactory.GetRandomType();
@@ -50,10 +44,21 @@ public class GridManager : MonoBehaviour
                 grid[x, y] = tile;
             }
         }
+
+        CountPossibleMoves();
     }
 
     public void CheckMatches()
     {
+        // Если уже обрабатываем — не запускаем снова
+        if (isProcessing) return;
+        StartCoroutine(CheckMatchesRoutine());
+    }
+
+    IEnumerator CheckMatchesRoutine()
+    {
+        isProcessing = true;
+
         bool[,] matched = new bool[width, height];
         bool foundMatch = false;
 
@@ -61,49 +66,33 @@ public class GridManager : MonoBehaviour
         for (int y = 0; y < height; y++)
         {
             int x = 0;
-
             while (x < width)
             {
                 Tile current = grid[x, y];
 
-                if (!IsNormalTile(current))
-                {
-                    x++;
-                    continue;
-                }
+                if (!IsNormalTile(current)) { x++; continue; }
 
                 int count = 1;
-
                 while (x + count < width &&
-                        IsNormalTile(grid[x + count, y]) &&
-                        grid[x + count, y].type == current.type)
-                {
+                       IsNormalTile(grid[x + count, y]) &&
+                       grid[x + count, y].type == current.type)
                     count++;
-                }
 
                 if (count >= 5)
                 {
                     current.SetBonus(BonusType.ColorBomb);
-
-                    for (int i = 1; i < count; i++)
-                        matched[x + i, y] = true;
-
+                    for (int i = 1; i < count; i++) matched[x + i, y] = true;
                     foundMatch = true;
                 }
                 else if (count == 4)
                 {
                     current.SetBonus(BonusType.RocketHorizontal);
-
-                    for (int i = 1; i < count; i++)
-                        matched[x + i, y] = true;
-
+                    for (int i = 1; i < count; i++) matched[x + i, y] = true;
                     foundMatch = true;
                 }
                 else if (count == 3)
                 {
-                    for (int i = 0; i < count; i++)
-                        matched[x + i, y] = true;
-
+                    for (int i = 0; i < count; i++) matched[x + i, y] = true;
                     foundMatch = true;
                 }
 
@@ -115,57 +104,46 @@ public class GridManager : MonoBehaviour
         for (int x = 0; x < width; x++)
         {
             int y = 0;
-
             while (y < height)
             {
                 Tile current = grid[x, y];
 
-                if (!IsNormalTile(current))
-                {
-                    y++;
-                    continue;
-                }
+                if (!IsNormalTile(current)) { y++; continue; }
 
                 int count = 1;
-
                 while (y + count < height &&
-                        IsNormalTile(grid[x, y + count]) &&
-                        grid[x, y + count].type == current.type)
-                {
+                       IsNormalTile(grid[x, y + count]) &&
+                       grid[x, y + count].type == current.type)
                     count++;
-                }
 
                 if (count >= 5)
                 {
                     current.SetBonus(BonusType.ColorBomb);
-
-                    for (int i = 1; i < count; i++)
-                        matched[x, y + i] = true;
-
+                    for (int i = 1; i < count; i++) matched[x, y + i] = true;
                     foundMatch = true;
                 }
                 else if (count == 4)
                 {
                     current.SetBonus(BonusType.RocketVertical);
-
-                    for (int i = 1; i < count; i++)
-                        matched[x, y + i] = true;
-
+                    for (int i = 1; i < count; i++) matched[x, y + i] = true;
                     foundMatch = true;
                 }
                 else if (count == 3)
                 {
-                    for (int i = 0; i < count; i++)
-                        matched[x, y + i] = true;
-
+                    for (int i = 0; i < count; i++) matched[x, y + i] = true;
                     foundMatch = true;
                 }
 
                 y += count;
             }
         }
+
         CheckShapeBombs(matched);
 
+        if (foundMatch)
+        {
+            SoundManager.instance.PlayMatch();
+        }
         // знищення позначених плиток
         for (int x = 0; x < width; x++)
         {
@@ -173,10 +151,12 @@ public class GridManager : MonoBehaviour
             {
                 if (matched[x, y] && grid[x, y] != null)
                 {
-                    grid[x, y].DestroyWithAnimation();
+                    if (grid[x, y].gameObject)
+                    {
+                        grid[x, y].DestroyWithAnimation();
+                        GameManager.instance.scoreManager.AddScore(10);
+                    }
                     grid[x, y] = null;
-
-                    GameManager.instance.scoreManager.AddScore(10);
                 }
             }
         }
@@ -185,41 +165,37 @@ public class GridManager : MonoBehaviour
         {
             GameManager.instance.scoreManager.IncreaseCombo();
 
-            Invoke(nameof(DropTiles), 0.35f);
-            Invoke(nameof(CheckMatches), 0.55f);
+            // Ждём анимацию уничтожения
+            yield return new WaitForSeconds(0.35f);
+            DropTiles();
+
+            // Ждём анимацию падения
+            yield return new WaitForSeconds(0.25f);
+
+            isProcessing = false;
+            CheckMatches(); // рекурсивно проверяем снова
         }
         else
         {
             GameManager.instance.scoreManager.ResetCombo();
+            isProcessing = false;
         }
     }
 
     bool CreatesMatch(int x, int y, TileType type)
     {
-        // перевірка вліво
         if (x >= 2)
         {
             if (grid[x - 1, y] != null && grid[x - 2, y] != null)
-            {
-                if (grid[x - 1, y].type == type &&
-                    grid[x - 2, y].type == type)
-                {
+                if (grid[x - 1, y].type == type && grid[x - 2, y].type == type)
                     return true;
-                }
-            }
         }
 
-        // перевірка вниз
         if (y >= 2)
         {
             if (grid[x, y - 1] != null && grid[x, y - 2] != null)
-            {
-                if (grid[x, y - 1].type == type &&
-                    grid[x, y - 2].type == type)
-                {
+                if (grid[x, y - 1].type == type && grid[x, y - 2].type == type)
                     return true;
-                }
-            }
         }
 
         return false;
@@ -245,8 +221,7 @@ public class GridManager : MonoBehaviour
                                 y * offset - height / 2f
                             );
 
-                            StartCoroutine(grid[x, y].MoveTo(targetPosition, 0.25f));
-
+                            StartCoroutine(grid[x, y].MoveTo(targetPosition, 0.2f));
                             break;
                         }
                     }
@@ -275,48 +250,27 @@ public class GridManager : MonoBehaviour
 
                     grid[x, y] = tile;
                     StartCoroutine(tile.Bounce());
-
-                    CountPossibleMoves();
                 }
             }
         }
-    }
-    void CreateRocket(Tile tile, bool horizontal)
-    {
-        if (tile == null)
-            return;
 
-        if (horizontal)
-            tile.SetBonus(BonusType.RocketHorizontal);
-        else
-            tile.SetBonus(BonusType.RocketVertical);
+        CountPossibleMoves();
     }
+
     public void ActivateRocket(Tile rocket)
     {
-        if (rocket == null)
-            return;
+        if (rocket == null) return;
 
-        int rocketX = -1;
-        int rocketY = -1;
+        SoundManager.instance.PlayRocket();
 
-        // координати ракети
+        int rocketX = -1, rocketY = -1;
+
         for (int x = 0; x < width; x++)
-        {
             for (int y = 0; y < height; y++)
-            {
-                if (grid[x, y] == rocket)
-                {
-                    rocketX = x;
-                    rocketY = y;
-                    break;
-                }
-            }
-        }
+                if (grid[x, y] == rocket) { rocketX = x; rocketY = y; break; }
 
-        if (rocketX == -1 || rocketY == -1)
-            return;
+        if (rocketX == -1 || rocketY == -1) return;
 
-        // горизонтальна ракета
         if (rocket.bonusType == BonusType.RocketHorizontal)
         {
             for (int x = 0; x < width; x++)
@@ -325,14 +279,11 @@ public class GridManager : MonoBehaviour
                 {
                     grid[x, rocketY].DestroyWithAnimation();
                     grid[x, rocketY] = null;
-
                     GameManager.instance.scoreManager.AddScore(20);
                 }
             }
         }
-
-        // вертикальна ракета
-        if (rocket.bonusType == BonusType.RocketVertical)
+        else if (rocket.bonusType == BonusType.RocketVertical)
         {
             for (int y = 0; y < height; y++)
             {
@@ -340,38 +291,28 @@ public class GridManager : MonoBehaviour
                 {
                     grid[rocketX, y].DestroyWithAnimation();
                     grid[rocketX, y] = null;
-
                     GameManager.instance.scoreManager.AddScore(20);
                 }
             }
         }
 
-        Invoke(nameof(DropTiles), 0.35f);
-        Invoke(nameof(CheckMatches), 0.55f);
+        isProcessing = false;
+        StartCoroutine(DelayedDropAndCheck());
     }
+
     public void ActivateBomb(Tile bomb)
     {
-        if (bomb == null)
-            return;
+        if (bomb == null) return;
 
-        int bombX = -1;
-        int bombY = -1;
+        SoundManager.instance.PlayBomb();
+
+        int bombX = -1, bombY = -1;
 
         for (int x = 0; x < width; x++)
-        {
             for (int y = 0; y < height; y++)
-            {
-                if (grid[x, y] == bomb)
-                {
-                    bombX = x;
-                    bombY = y;
-                    break;
-                }
-            }
-        }
+                if (grid[x, y] == bomb) { bombX = x; bombY = y; break; }
 
-        if (bombX == -1 || bombY == -1)
-            return;
+        if (bombX == -1 || bombY == -1) return;
 
         for (int x = bombX - 1; x <= bombX + 1; x++)
         {
@@ -383,26 +324,24 @@ public class GridManager : MonoBehaviour
                     {
                         grid[x, y].DestroyWithAnimation();
                         grid[x, y] = null;
-
                         GameManager.instance.scoreManager.AddScore(30);
                     }
                 }
             }
         }
 
-        Invoke(nameof(DropTiles), 0.35f);
-        Invoke(nameof(CheckMatches), 0.55f);
+        isProcessing = false;
+        StartCoroutine(DelayedDropAndCheck());
     }
-    bool IsNormalTile(Tile tile)
-    {
-        return tile != null && tile.bonusType == BonusType.None;
-    }
+
     public void ActivateColorBomb(Tile colorBomb)
     {
-        if (colorBomb == null)
-            return;
+        if (colorBomb == null) return;
+
+        SoundManager.instance.PlayColorBomb();
 
         TileType targetType = colorBomb.type;
+
         for (int x = 0; x < width; x++)
         {
             for (int y = 0; y < height; y++)
@@ -411,7 +350,6 @@ public class GridManager : MonoBehaviour
                 {
                     grid[x, y].DestroyWithAnimation();
                     grid[x, y] = null;
-
                     GameManager.instance.scoreManager.AddScore(15);
                 }
             }
@@ -419,9 +357,25 @@ public class GridManager : MonoBehaviour
 
         colorBomb.DestroyWithAnimation();
 
-        Invoke(nameof(DropTiles), 0.35f);
-        Invoke(nameof(CheckMatches), 0.55f);
+        isProcessing = false;
+        StartCoroutine(DelayedDropAndCheck());
     }
+
+    IEnumerator DelayedDropAndCheck()
+    {
+        yield return new WaitForSeconds(0.35f);
+        DropTiles();
+        yield return new WaitForSeconds(0.25f);
+        CheckMatches();
+    }
+
+    bool IsNormalTile(Tile tile)
+    {
+        if (tile == null) return false;
+        if (!tile.gameObject) return false;
+        return tile.bonusType == BonusType.None;
+    }
+
     void CheckShapeBombs(bool[,] matched)
     {
         for (int x = 0; x < width; x++)
@@ -436,188 +390,186 @@ public class GridManager : MonoBehaviour
                 int horizontalCount = 1;
                 int verticalCount = 1;
 
-                // вліво
                 for (int i = x - 1; i >= 0; i--)
-                {
-                    if (grid[i, y] != null && grid[i, y].type == center.type)
-                        horizontalCount++;
-                    else
-                        break;
-                }
+                { if (grid[i, y] != null && grid[i, y].type == center.type) horizontalCount++; else break; }
 
-                // вправо
                 for (int i = x + 1; i < width; i++)
-                {
-                    if (grid[i, y] != null && grid[i, y].type == center.type)
-                        horizontalCount++;
-                    else
-                        break;
-                }
+                { if (grid[i, y] != null && grid[i, y].type == center.type) horizontalCount++; else break; }
 
-                // вниз
                 for (int j = y - 1; j >= 0; j--)
-                {
-                    if (grid[x, j] != null && grid[x, j].type == center.type)
-                        verticalCount++;
-                    else
-                        break;
-                }
+                { if (grid[x, j] != null && grid[x, j].type == center.type) verticalCount++; else break; }
 
-                // вверх
                 for (int j = y + 1; j < height; j++)
-                {
-                    if (grid[x, j] != null && grid[x, j].type == center.type)
-                        verticalCount++;
-                    else
-                        break;
-                }
+                { if (grid[x, j] != null && grid[x, j].type == center.type) verticalCount++; else break; }
 
                 if (horizontalCount >= 3 && verticalCount >= 3)
                 {
                     center.SetBonus(BonusType.Bomb);
 
-                    //  горизонталь
                     for (int i = x - 1; i >= 0; i--)
-                    {
-                        if (grid[i, y] != null && grid[i, y].type == center.type)
-                            matched[i, y] = true;
-                        else
-                            break;
-                    }
+                    { if (grid[i, y] != null && grid[i, y].type == center.type) matched[i, y] = true; else break; }
 
                     for (int i = x + 1; i < width; i++)
-                    {
-                        if (grid[i, y] != null && grid[i, y].type == center.type)
-                            matched[i, y] = true;
-                        else
-                            break;
-                    }
+                    { if (grid[i, y] != null && grid[i, y].type == center.type) matched[i, y] = true; else break; }
 
-                    //  вертикаль
                     for (int j = y - 1; j >= 0; j--)
-                    {
-                        if (grid[x, j] != null && grid[x, j].type == center.type)
-                            matched[x, j] = true;
-                        else
-                            break;
-                    }
+                    { if (grid[x, j] != null && grid[x, j].type == center.type) matched[x, j] = true; else break; }
 
                     for (int j = y + 1; j < height; j++)
-                    {
-                        if (grid[x, j] != null && grid[x, j].type == center.type)
-                            matched[x, j] = true;
-                        else
-                            break;
-                    }
+                    { if (grid[x, j] != null && grid[x, j].type == center.type) matched[x, j] = true; else break; }
 
                     matched[x, y] = false;
                 }
             }
         }
     }
+
     public int CountPossibleMoves()
     {
         int possibleMoves = 0;
+        hintTileA = null;
+        hintTileB = null;
 
         for (int x = 0; x < width; x++)
         {
             for (int y = 0; y < height; y++)
             {
-                if (grid[x, y] == null)
-                    continue;
+                if (grid[x, y] == null) continue;
 
-                // перевірка вправо
                 if (x < width - 1)
                 {
                     SwapInArray(x, y, x + 1, y);
-
                     if (HasMatchAt(x, y) || HasMatchAt(x + 1, y))
+                    {
                         possibleMoves++;
-
+                        if (hintTileA == null)
+                        {
+                            hintTileA = grid[x + 1, y];
+                            hintTileB = grid[x, y];
+                        }
+                    }
                     SwapInArray(x, y, x + 1, y);
                 }
 
-                // перевірка вверх
                 if (y < height - 1)
                 {
                     SwapInArray(x, y, x, y + 1);
-
                     if (HasMatchAt(x, y) || HasMatchAt(x, y + 1))
+                    {
                         possibleMoves++;
-
+                        if (hintTileA == null)
+                        {
+                            hintTileA = grid[x, y + 1];
+                            hintTileB = grid[x, y];
+                        }
+                    }
                     SwapInArray(x, y, x, y + 1);
                 }
             }
         }
 
-        Debug.Log("Possible moves: " + possibleMoves);
         return possibleMoves;
     }
+
     void SwapInArray(int x1, int y1, int x2, int y2)
     {
         Tile temp = grid[x1, y1];
         grid[x1, y1] = grid[x2, y2];
         grid[x2, y2] = temp;
     }
+
     bool HasMatchAt(int x, int y)
     {
         Tile tile = grid[x, y];
-
-        if (tile == null)
-            return false;
+        if (tile == null) return false;
 
         TileType type = tile.type;
-
-        int horizontalCount = 1;
+        int horizontalCount = 1, verticalCount = 1;
 
         for (int i = x - 1; i >= 0; i--)
-        {
-            if (grid[i, y] != null && grid[i, y].type == type)
-                horizontalCount++;
-            else
-                break;
-        }
+        { if (grid[i, y] != null && grid[i, y].type == type) horizontalCount++; else break; }
 
         for (int i = x + 1; i < width; i++)
-        {
-            if (grid[i, y] != null && grid[i, y].type == type)
-                horizontalCount++;
-            else
-                break;
-        }
-
-        int verticalCount = 1;
+        { if (grid[i, y] != null && grid[i, y].type == type) horizontalCount++; else break; }
 
         for (int j = y - 1; j >= 0; j--)
-        {
-            if (grid[x, j] != null && grid[x, j].type == type)
-                verticalCount++;
-            else
-                break;
-        }
+        { if (grid[x, j] != null && grid[x, j].type == type) verticalCount++; else break; }
 
         for (int j = y + 1; j < height; j++)
-        {
-            if (grid[x, j] != null && grid[x, j].type == type)
-                verticalCount++;
-            else
-                break;
-        }
+        { if (grid[x, j] != null && grid[x, j].type == type) verticalCount++; else break; }
 
         return horizontalCount >= 3 || verticalCount >= 3;
     }
+
     public void ClearGrid()
     {
-        foreach (Transform child in tileFactory.tileParent)
+        CancelInvoke();
+        StopAllCoroutines();
+        isProcessing = false;
+
+        idleTimer = 0f;
+        hintShown = false;
+        hintTileA = null;
+        hintTileB = null;
+
+        if (tileFactory != null && tileFactory.tileParent != null)
         {
-            DestroyImmediate(child.gameObject);
+            int childCount = tileFactory.tileParent.childCount;
+            for (int i = childCount - 1; i >= 0; i--)
+            {
+                Transform child = tileFactory.tileParent.GetChild(i);
+                if (child != null)
+                    DestroyImmediate(child.gameObject);
+            }
         }
 
         grid = new Tile[width, height];
     }
+
     public void ResetGrid()
     {
         ClearGrid();
         GenerateGrid();
+    }
+    void Update()
+    {
+        if (!GameManager.instance.isGameActive) return;
+        if (!SettingsManager.instance.hintsEnabled) return;
+
+        idleTimer += Time.deltaTime;
+
+        if (idleTimer >= hintDelay && !hintShown)
+        {
+            ShowHint();
+        }
+    }
+
+    public void ResetIdleTimer()
+    {
+        idleTimer = 0f;
+        HideHint();
+    }
+    void ShowHint()
+    {
+        if (hintTileA == null || hintTileB == null) return;
+
+        hintShown = true;
+        StartCoroutine(PulseHint());
+    }
+
+    void HideHint()
+    {
+        hintShown = false;
+        if (hintTileA != null) hintTileA.ResetScale();
+        if (hintTileB != null) hintTileB.ResetScale();
+    }
+
+    IEnumerator PulseHint()
+    {
+        while (hintShown)
+        {
+            if (hintTileA != null) yield return StartCoroutine(hintTileA.Bounce());
+            if (hintTileB != null) yield return StartCoroutine(hintTileB.Bounce());
+        }
     }
 }

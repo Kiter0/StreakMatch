@@ -38,7 +38,8 @@ public class Tile : MonoBehaviour
     {
         if (destroyEffectPrefab != null)
         {
-            Instantiate(destroyEffectPrefab, transform.position, Quaternion.identity);
+            GameObject effect = Instantiate(destroyEffectPrefab, transform.position, Quaternion.identity);
+            Destroy(effect, 2f); 
         }
 
         StartCoroutine(DestroyRoutine());

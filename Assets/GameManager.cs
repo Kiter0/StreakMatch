@@ -13,6 +13,7 @@ public class GameManager : MonoBehaviour
     public TextMeshProUGUI movesText;
     public TextMeshProUGUI highScoreText;
     public TextMeshProUGUI targetText;
+    public TextMeshProUGUI levelText;
     public bool isGameActive = false;
     public int moves = 20;
     public LevelData[] levels;
@@ -25,11 +26,16 @@ public class GameManager : MonoBehaviour
     {
         instance = this;
     }
+    public int GetCurrentLevel()
+    {
+        return currentLevel;
+    }
 
     public void SelectTile(Tile tile)
     {
-        if (!isGameActive)
-            return;
+        if (!isGameActive) return;
+
+        gridManager.ResetIdleTimer();
 
         BonusEffect effect = null;
 
@@ -79,6 +85,7 @@ public class GameManager : MonoBehaviour
     IEnumerator SwapTiles()
     {
         if (!isGameActive) yield break;
+        if (firstTile == null || secondTile == null) yield break;
 
         StartCombo();
 
@@ -90,16 +97,17 @@ public class GameManager : MonoBehaviour
 
         yield return new WaitForSeconds(0.25f);
 
-        GridManager gm = gridManager;
+        if (firstTile == null || secondTile == null) yield break;
+        if (gridManager == null) yield break;
 
-        for (int x = 0; x < gm.width; x++)
+        for (int x = 0; x < gridManager.width; x++)
         {
-            for (int y = 0; y < gm.height; y++)
+            for (int y = 0; y < gridManager.height; y++)
             {
-                if (gm.grid[x, y] == firstTile)
-                    gm.grid[x, y] = secondTile;
-                else if (gm.grid[x, y] == secondTile)
-                    gm.grid[x, y] = firstTile;
+                if (gridManager.grid[x, y] == firstTile)
+                    gridManager.grid[x, y] = secondTile;
+                else if (gridManager.grid[x, y] == secondTile)
+                    gridManager.grid[x, y] = firstTile;
             }
         }
 
@@ -108,18 +116,15 @@ public class GameManager : MonoBehaviour
         moves--;
         UpdateUI();
 
-
-        if (scoreManager.Score >= levels[currentLevel].targetScore)
-        {
-            LevelCompleted();
-            ResetSelection();
-            yield break;
-        }
-
         if (moves <= 0)
         {
+            yield return new WaitForSeconds(0.8f);
             isGameActive = false;
-            uiManager.ShowGameOver();
+
+            if (scoreManager.Score >= levels[currentLevel].targetScore)
+                LevelCompleted(); // победа — показываем звёзды
+            else
+                uiManager.ShowGameOver(); // поражение — цель не достигнута
         }
 
         ResetSelection();
@@ -145,7 +150,7 @@ public class GameManager : MonoBehaviour
         float dx = Mathf.Abs(posA.x - posB.x);
         float dy = Mathf.Abs(posA.y - posB.y);
 
-        return (dx < 1.2f && dy < 0.1f) || (dx < 0.1f && dy < 1.2f);
+        return (dx < 1.5f && dy < 0.1f) || (dx < 0.1f && dy < 1.5f);
     }
     public void StartCombo()
     {
@@ -162,6 +167,7 @@ public class GameManager : MonoBehaviour
         movesText.text = "Moves: " + moves;
         highScoreText.text = "High Score: " + scoreManager.HighScore;
         targetText.text = "Target: " + levels[currentLevel].targetScore;
+        levelText.text = "Рівень: " + levels[currentLevel].levelNumber;
     }
     public void LevelCompleted()
     {
@@ -171,9 +177,18 @@ public class GameManager : MonoBehaviour
     }
     public void StartLevel(int levelIndex)
     {
+        if (levelIndex >= levels.Length)
+        {
+            Debug.LogError("Уровень " + levelIndex + " не существует!");
+            return;
+        }
+
         currentLevel = levelIndex;
 
-        gridManager.ResetGrid();
+        if (gridManager != null)
+            gridManager.ResetGrid();
+        else
+            Debug.LogError("GridManager не назначен!");
 
         moves = levels[levelIndex].moves;
 
@@ -191,16 +206,21 @@ public class GameManager : MonoBehaviour
     public void NextLevel()
     {
         currentLevel++;
-
         if (currentLevel < levels.Length)
         {
-            uiManager.ShowGame();
-            StartLevel(currentLevel);
+            uiManager.ShowGame();   
+            StartLevel(currentLevel); 
         }
-        else
-        {
-            uiManager.ShowMenu();
-        }
+    }
+    public int CalculateStars()
+    {
+        int target = levels[currentLevel].targetScore;
+        int score = scoreManager.Score;
+
+        if (score >= target * 1.5f) return 3;
+        if (score >= target * 1.2f) return 2;
+        if (score >= target) return 1;
+        return 0;
     }
 
 }

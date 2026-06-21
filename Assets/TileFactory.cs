@@ -18,10 +18,9 @@ public class TileFactory : MonoBehaviour
     public Tile CreateTile(Vector2 position, TileType type)
     {
         GameObject tileObj = Instantiate(tilePrefab, position, Quaternion.identity, tileParent);
+
         Tile tile = tileObj.GetComponent<Tile>();
-
         tile.SetType(type, colors[(int)type]);
-
         tile.destroyEffectPrefab = destroyEffectPrefab;
 
         return tile;
